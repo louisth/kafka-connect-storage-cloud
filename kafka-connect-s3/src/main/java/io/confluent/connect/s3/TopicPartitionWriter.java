@@ -18,6 +18,7 @@ package io.confluent.connect.s3;
 import com.amazonaws.SdkClientException;
 import io.confluent.connect.s3.storage.S3Storage;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.IllegalWorkerStateException;
@@ -36,12 +37,13 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import io.confluent.common.utils.SystemTime;
 import io.confluent.common.utils.Time;
 import io.confluent.connect.storage.StorageSinkConnectorConfig;
 import io.confluent.connect.storage.common.StorageCommonConfig;
-import io.confluent.connect.storage.common.util.StringUtils;
 import io.confluent.connect.storage.format.RecordWriter;
 import io.confluent.connect.storage.format.RecordWriterProvider;
 import io.confluent.connect.storage.partitioner.Partitioner;
@@ -53,6 +55,7 @@ import io.confluent.connect.storage.util.DateTimeUtils;
 
 public class TopicPartitionWriter {
   private static final Logger log = LoggerFactory.getLogger(TopicPartitionWriter.class);
+  private static final Pattern SUBSTITUTION_VARIABLE_PATTERN = Pattern.compile("\\$\\{([\\w.]+)}");
 
   private final Map<String, String> commitFiles;
   private final Map<String, RecordWriter> writers;
@@ -88,6 +91,7 @@ public class TopicPartitionWriter {
   private final String zeroPadOffsetFormat;
   private final String dirDelim;
   private final String fileDelim;
+  private final String objectNamePattern;
   private final Time time;
   private DateTimeZone timeZone;
   private final S3SinkConnectorConfig connectorConfig;
@@ -158,6 +162,8 @@ public class TopicPartitionWriter {
     zeroPadOffsetFormat = "%0"
         + connectorConfig.getInt(S3SinkConnectorConfig.FILENAME_OFFSET_ZERO_PAD_WIDTH_CONFIG)
         + "d";
+    objectNamePattern = connectorConfig.getString(
+            S3SinkConnectorConfig.S3_OBJECT_NAME_PATTERN_CONFIG);
 
     // Initialize scheduled rotation timer if applicable
     setNextScheduledRotation();
@@ -454,29 +460,47 @@ public class TopicPartitionWriter {
     if (commitFiles.containsKey(encodedPartition)) {
       commitFile = commitFiles.get(encodedPartition);
     } else {
-      long startOffset = startOffsets.get(encodedPartition);
-      String prefix = getDirectoryPrefix(encodedPartition);
-      commitFile = fileKeyToCommit(prefix, startOffset);
+
+      String adjustedTopicsDir = topicsDir;
+      if (!adjustedTopicsDir.isEmpty()
+              && !adjustedTopicsDir.endsWith(dirDelim)) {
+        adjustedTopicsDir += dirDelim;
+      }
+
+      Map<String, String> substitutions = new HashMap<>();
+      substitutions.put("dir.delim", dirDelim);
+      substitutions.put("file.delim", fileDelim);
+      substitutions.put("topics.dir", adjustedTopicsDir);
+      substitutions.put("format.extension", extension);
+      substitutions.put("partitioner.encodedPartition",
+              getDirectoryPrefix(encodedPartition));
+      substitutions.put("kafka.topic", tp.topic());
+      substitutions.put("kafka.partition", String.valueOf(tp.partition()));
+      substitutions.put("kafka.startOffset",
+              String.format(zeroPadOffsetFormat, startOffsets.get(encodedPartition)));
+      // todo: date stuff from partitioner
+
+      commitFile = formatObjectName(substitutions);
       commitFiles.put(encodedPartition, commitFile);
     }
     return commitFile;
   }
 
-  private String fileKey(String topicsPrefix, String keyPrefix, String name) {
-    String suffix = keyPrefix + dirDelim + name;
-    return StringUtils.isNotBlank(topicsPrefix)
-           ? topicsPrefix + dirDelim + suffix
-           : suffix;
-  }
+  private String formatObjectName(Map<String, String> substitutions) {
+    StringBuffer stringBuffer = new StringBuffer();
 
-  private String fileKeyToCommit(String dirPrefix, long startOffset) {
-    String name = tp.topic()
-                      + fileDelim
-                      + tp.partition()
-                      + fileDelim
-                      + String.format(zeroPadOffsetFormat, startOffset)
-                      + extension;
-    return fileKey(topicsDir, dirPrefix, name);
+    Matcher matcher = SUBSTITUTION_VARIABLE_PATTERN.matcher(objectNamePattern);
+    while (matcher.find()) {
+      String variableName = matcher.group(1);
+      if (!substitutions.containsKey(variableName)) {
+        throw new ConfigException("Pattern \"" + objectNamePattern
+                + "\" contains unknown variable \"" + variableName + "\"."
+                + " Known variables are " + substitutions.keySet().toString() + ".");
+      }
+      matcher.appendReplacement(stringBuffer, substitutions.get(variableName));
+    }
+    matcher.appendTail(stringBuffer);
+    return stringBuffer.toString();
   }
 
   private void writeRecord(SinkRecord record) {

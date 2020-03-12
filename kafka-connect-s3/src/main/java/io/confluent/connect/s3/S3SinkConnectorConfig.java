@@ -78,6 +78,13 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
   public static final String S3_OBJECT_TAGGING_CONFIG = "s3.object.tagging";
   public static final boolean S3_OBJECT_TAGGING_DEFAULT = false;
 
+  public static final String S3_OBJECT_NAME_PATTERN_CONFIG = "s3.object.name.pattern";
+  public static final String S3_OBJECT_NAME_PATTERN_DEFAULT
+          = "${topics.dir}"
+          + "${partitioner.encodedPartition}${dir.delim}"
+          + "${kafka.topic}${file.delim}${kafka.partition}${file.delim}${kafka.startOffset}"
+          + "${format.extension}";
+
   public static final String SSEA_CONFIG = "s3.ssea.name";
   public static final String SSEA_DEFAULT = "";
 
@@ -245,6 +252,24 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
           ++orderInGroup,
           Width.LONG,
           "S3 Object Tagging"
+      );
+
+      configDef.define(
+              S3_OBJECT_NAME_PATTERN_CONFIG,
+              Type.STRING,
+              S3_OBJECT_NAME_PATTERN_DEFAULT,
+              Importance.LOW,
+              "Pattern used to build object names within the bucket."
+                      + " Variable substitution will be performed."
+                      + " The following variables are defined."
+                      + " ${dir.delim} ${file.delim} ${topics.dir}"
+                      + " ${format.extension}"
+                      + " ${partitioner.encodedPartition}"
+                      + " ${kafka.topic} ${kafka.partition} ${kafka.startOffset}",
+              group,
+              ++orderInGroup,
+              Width.LONG,
+              "Pattern used to build object names within the bucket."
       );
 
       configDef.define(
