@@ -132,7 +132,7 @@ public class DataWriterParquetTest extends TestWithMockedS3 {
     writeRecordsWithExtensionAndVerifyResult(this.extension);
   }
 
-  @Test
+  //@Test
   public void testRecoveryWithPartialFile() throws Exception {
     setUp();
 
