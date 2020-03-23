@@ -81,9 +81,20 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
   public static final String S3_OBJECT_NAME_PATTERN_CONFIG = "s3.object.name.pattern";
   public static final String S3_OBJECT_NAME_PATTERN_DEFAULT
           = "${topics.dir}"
-          + "${partitioner.encodedPartition}${dir.delim}"
+          + "${partitioner.partitionedPath}${directory.delim}"
           + "${kafka.topic}${file.delim}${kafka.partition}${file.delim}${kafka.startOffset}"
           + "${format.extension}";
+  public static final String S3_OBJECT_NAME_PATTERN_DOC
+          = "Pattern used to build object names within the bucket."
+          + " Variable substitution will be performed."
+          + " The following variables are defined:"
+          + " ${directory.delim} ${file.delim} ${topics.dir}"
+          + " ${format.extension}"
+          + " ${partitioner.encodedPartition}"
+          + " ${partitioner.nowMillis}"
+          + " ${partitioner.partitionedPath}"
+          + " ${kafka.topic} ${kafka.partition} ${kafka.startOffset}";
+  public static final String S3_OBJECT_NAME_PATTERN_DISPLAY = "S3 Object Name Pattern";
 
   public static final String SSEA_CONFIG = "s3.ssea.name";
   public static final String SSEA_DEFAULT = "";
@@ -259,17 +270,11 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
               Type.STRING,
               S3_OBJECT_NAME_PATTERN_DEFAULT,
               Importance.LOW,
-              "Pattern used to build object names within the bucket."
-                      + " Variable substitution will be performed."
-                      + " The following variables are defined."
-                      + " ${dir.delim} ${file.delim} ${topics.dir}"
-                      + " ${format.extension}"
-                      + " ${partitioner.encodedPartition}"
-                      + " ${kafka.topic} ${kafka.partition} ${kafka.startOffset}",
+              S3_OBJECT_NAME_PATTERN_DOC,
               group,
               ++orderInGroup,
               Width.LONG,
-              "Pattern used to build object names within the bucket."
+              S3_OBJECT_NAME_PATTERN_DISPLAY
       );
 
       configDef.define(

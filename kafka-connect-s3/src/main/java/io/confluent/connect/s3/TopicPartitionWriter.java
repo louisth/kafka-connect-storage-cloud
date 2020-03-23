@@ -97,6 +97,8 @@ public class TopicPartitionWriter {
   private final S3SinkConnectorConfig connectorConfig;
   private static final Time SYSTEM_TIME = new SystemTime();
 
+  private final Map<String, String> substitutionVariables;
+
   public TopicPartitionWriter(TopicPartition tp,
                               S3Storage storage,
                               RecordWriterProvider<S3SinkConnectorConfig> writerProvider,
@@ -165,6 +167,19 @@ public class TopicPartitionWriter {
     objectNamePattern = connectorConfig.getString(
             S3SinkConnectorConfig.S3_OBJECT_NAME_PATTERN_CONFIG);
 
+    if (!topicsDir.isEmpty()
+            && !topicsDir.endsWith(dirDelim)) {
+      topicsDir += dirDelim;
+    }
+
+    substitutionVariables = new HashMap<>();
+    substitutionVariables.put("directory.delim", dirDelim);
+    substitutionVariables.put("file.delim", fileDelim);
+    substitutionVariables.put("topics.dir", topicsDir);
+    substitutionVariables.put("format.extension", extension);
+    substitutionVariables.put("kafka.topic", tp.topic());
+    substitutionVariables.put("kafka.partition", String.valueOf(tp.partition()));
+
     // Initialize scheduled rotation timer if applicable
     setNextScheduledRotation();
   }
@@ -216,7 +231,7 @@ public class TopicPartitionWriter {
           }
         }
         Schema valueSchema = record.valueSchema();
-        String encodedPartition = partitioner.encodePartition(record, now);
+        String encodedPartition = partitioner.encodePartition(record, now, substitutionVariables);
         Schema currentValueSchema = currentSchemas.get(encodedPartition);
         if (currentValueSchema == null) {
           currentSchemas.put(encodedPartition, valueSchema);
@@ -460,27 +475,9 @@ public class TopicPartitionWriter {
     if (commitFiles.containsKey(encodedPartition)) {
       commitFile = commitFiles.get(encodedPartition);
     } else {
-
-      String adjustedTopicsDir = topicsDir;
-      if (!adjustedTopicsDir.isEmpty()
-              && !adjustedTopicsDir.endsWith(dirDelim)) {
-        adjustedTopicsDir += dirDelim;
-      }
-
-      Map<String, String> substitutions = new HashMap<>();
-      substitutions.put("dir.delim", dirDelim);
-      substitutions.put("file.delim", fileDelim);
-      substitutions.put("topics.dir", adjustedTopicsDir);
-      substitutions.put("format.extension", extension);
-      substitutions.put("partitioner.encodedPartition",
-              getDirectoryPrefix(encodedPartition));
-      substitutions.put("kafka.topic", tp.topic());
-      substitutions.put("kafka.partition", String.valueOf(tp.partition()));
-      substitutions.put("kafka.startOffset",
+      substitutionVariables.put("kafka.startOffset",
               String.format(zeroPadOffsetFormat, startOffsets.get(encodedPartition)));
-      // todo: date stuff from partitioner
-
-      commitFile = formatObjectName(substitutions);
+      commitFile = formatObjectName(substitutionVariables);
       commitFiles.put(encodedPartition, commitFile);
     }
     return commitFile;
